@@ -7,53 +7,62 @@ const mongoose = require("mongoose");
 
 const app = express();
 
-/* ============================
-   CONFIG
-============================ */
+// ============================
+// CONFIG
+// ============================
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
-/* ============================
-   CORS (🔥 THIS IS THE FIX)
-============================ */
-const allowedOrigins = [
+// ✅ CHANGE THIS (VERY IMPORTANT)
+const ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:5173",
   "https://lighthearted-sunshine-6fedb3.netlify.app"
 ];
 
+// ============================
+// CORS (FIXED FOR NETLIFY)
+// ============================
 app.use(
   cors({
     origin: function (origin, callback) {
+      // allow server-to-server & curl
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+
+      if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
+      } else {
+        return callback(new Error("CORS not allowed"), false);
       }
-      return callback(new Error("CORS not allowed"));
     },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
   })
 );
 
+// IMPORTANT: handle preflight
+app.options("*", cors());
+
 app.use(express.json());
 
-/* ============================
-   GOOGLE CLIENT
-============================ */
+// ============================
+// GOOGLE CLIENT
+// ============================
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-/* ============================
-   DATABASE
-============================ */
+// ============================
+// DATABASE
+// ============================
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ Mongo error", err));
 
-/* ============================
-   MODELS
-============================ */
+// ============================
+// MODELS
+// ============================
 const User = mongoose.model(
   "User",
   new mongoose.Schema(
@@ -84,12 +93,14 @@ const Activity = mongoose.model(
   )
 );
 
-/* ============================
-   AUTH MIDDLEWARE
-============================ */
+// ============================
+// AUTH MIDDLEWARE
+// ============================
 function auth(req, res, next) {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = header.split(" ")[1];
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -99,18 +110,22 @@ function auth(req, res, next) {
   }
 }
 
-/* ============================
-   ROUTES
-============================ */
+// ============================
+// ROUTES
+// ============================
 app.get("/api/health", (_, res) => {
   res.json({ status: "ok" });
 });
 
-/* GOOGLE LOGIN */
+// ============================
+// GOOGLE LOGIN
+// ============================
 app.post("/api/auth/google", async (req, res) => {
   try {
+    const { credential } = req.body;
+
     const ticket = await googleClient.verifyIdToken({
-      idToken: req.body.credential,
+      idToken: credential,
       audience: GOOGLE_CLIENT_ID
     });
 
@@ -134,15 +149,20 @@ app.post("/api/auth/google", async (req, res) => {
 
     res.json({
       token,
-      user: { name: user.name, email: user.email }
+      user: {
+        name: user.name,
+        email: user.email
+      }
     });
   } catch (err) {
-    console.error("Google auth error:", err);
+    console.error("❌ Google auth error", err);
     res.status(401).json({ error: "Google auth failed" });
   }
 });
 
-/* DASHBOARD */
+// ============================
+// DASHBOARD
+// ============================
 app.get("/api/dashboard", auth, async (req, res) => {
   const user = await User.findById(req.user.id);
   const activity = await Activity.find({ userId: user._id })
@@ -163,7 +183,9 @@ app.get("/api/dashboard", auth, async (req, res) => {
   });
 });
 
-/* WITHDRAW */
+// ============================
+// WITHDRAW
+// ============================
 app.post("/api/withdraw", auth, async (req, res) => {
   const { amount, network } = req.body;
   const user = await User.findById(req.user.id);
@@ -187,9 +209,9 @@ app.post("/api/withdraw", auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ============================
-   START SERVER
-============================ */
+// ============================
+// START SERVER
+// ============================
 app.listen(PORT, () => {
   console.log(`🚀 ZOPAY backend running on port ${PORT}`);
 });
