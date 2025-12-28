@@ -30,32 +30,25 @@ const ALLOWED_ORIGINS = [
 // CORS (FIXED FOR NETLIFY)
 // ============================
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://localhost:4000",
-  "https://lighthearted-sunshine-6fedb3.netlify.app",
-  "https://zopay-wallet.netlify.app"
-];
+// ============================
+// CORS — FINAL PRODUCTION SAFE
+// ============================
 
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow server-to-server, curl, Postman
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error("CORS blocked"), false);
-  },
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:4000",
+    "https://lighthearted-sunshine-6fedb3.netlify.app",
+    "https://zopay-wallet.netlify.app"
+  ],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
+  credentials: false
 }));
 
-// 👇 KEEP THIS
 app.use(express.json());
+
 
 
 
