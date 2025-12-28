@@ -24,23 +24,29 @@ const ALLOWED_ORIGINS = [
 // ============================
 // CORS (FIXED FOR NETLIFY)
 // ============================
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // allow server-to-server & curl
-      if (!origin) return callback(null, true);
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:4000",
+  "https://lighthearted-sunshine-6fedb3.netlify.app"
+];
 
-      if (ALLOWED_ORIGINS.includes(origin)) {
-        return callback(null, true);
-      } else {
-        return callback(new Error("CORS not allowed"), false);
-      }
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-  })
-);
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow server-to-server, curl, Postman
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS blocked"), false);
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
 
 // IMPORTANT: handle preflight
 app.options("*", cors());
