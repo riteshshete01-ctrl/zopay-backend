@@ -214,6 +214,16 @@ app.post("/api/withdraw", auth, async (req, res) => {
 
   res.json({ ok: true });
 });
+// ============================
+// GLOBAL ERROR HANDLER (PROD SAFE)
+// ============================
+app.use((err, req, res, next) => {
+  console.error("❌ Server error:", err.message);
+
+  res.status(500).json({
+    error: "Something went wrong. Please try again later."
+  });
+});
 
 // ============================
 // START SERVER
