@@ -19,17 +19,23 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:5173",
-  "https://lighthearted-sunshine-6fedb3.netlify.app"
+  "https://lighthearted-sunshine-6fedb3.netlify.app",
+   "https://zopay-wallet.netlify.app"
 ];
 
 // ============================
 // CORS (FIXED FOR NETLIFY)
 // ============================
+// ============================
+// CORS (FIXED FOR NETLIFY)
+// ============================
+
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
   "http://localhost:4000",
-  "https://lighthearted-sunshine-6fedb3.netlify.app"
+  "https://lighthearted-sunshine-6fedb3.netlify.app",
+  "https://zopay-wallet.netlify.app"
 ];
 
 app.use(cors({
@@ -47,6 +53,10 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
+
+// 👇 KEEP THIS
+app.use(express.json());
+
 
 
 // IMPORTANT: handle preflight
