@@ -34,27 +34,22 @@ const ALLOWED_ORIGINS = [
 // CORS — FINAL PRODUCTION SAFE
 // ============================
 
-app.use(cors({
+// ============================
+// CORS — SIMPLE & STABLE (RENDER + NETLIFY)
+// ============================
+const corsOptions = {
   origin: [
     "http://localhost:3000",
     "http://localhost:5173",
-    "http://localhost:4000",
     "https://lighthearted-sunshine-6fedb3.netlify.app",
     "https://zopay-wallet.netlify.app"
   ],
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false
-}));
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
 
-app.use(express.json());
-
-
-
-
-// IMPORTANT: handle preflight
-app.options("*", cors());
-
+app.use(cors(corsOptions));
+app.options("/*", cors());
 app.use(express.json());
 
 // ============================
