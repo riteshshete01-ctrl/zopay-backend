@@ -15,27 +15,23 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
 /* ============================
-   CORS (🔥 FIXED FOR NETLIFY + RENDER)
+   CORS (🔥 THIS IS THE FIX)
 ============================ */
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
-  "http://localhost:5500",
-  "http://localhost:4000",
-  "https://incomparable-begonia-a17bc8.netlify.app"
+  "https://lighthearted-sunshine-6fedb3.netlify.app"
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS not allowed"));
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
       }
+      return callback(new Error("CORS not allowed"));
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
   })
 );
@@ -53,7 +49,7 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => console.error("❌ Mongo error", err));
+  .catch((err) => console.error("❌ Mongo error", err));
 
 /* ============================
    MODELS
@@ -92,10 +88,8 @@ const Activity = mongoose.model(
    AUTH MIDDLEWARE
 ============================ */
 function auth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-
-  const token = authHeader.split(" ")[1];
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -112,7 +106,7 @@ app.get("/api/health", (_, res) => {
   res.json({ status: "ok" });
 });
 
-/* -------- GOOGLE LOGIN -------- */
+/* GOOGLE LOGIN */
 app.post("/api/auth/google", async (req, res) => {
   try {
     const ticket = await googleClient.verifyIdToken({
@@ -128,8 +122,7 @@ app.post("/api/auth/google", async (req, res) => {
       user = await User.create({
         googleId: payload.sub,
         name: payload.name,
-        email: payload.email,
-        usdtBalance: 0
+        email: payload.email
       });
     }
 
@@ -141,10 +134,7 @@ app.post("/api/auth/google", async (req, res) => {
 
     res.json({
       token,
-      user: {
-        name: user.name,
-        email: user.email
-      }
+      user: { name: user.name, email: user.email }
     });
   } catch (err) {
     console.error("Google auth error:", err);
@@ -152,7 +142,7 @@ app.post("/api/auth/google", async (req, res) => {
   }
 });
 
-/* -------- DASHBOARD -------- */
+/* DASHBOARD */
 app.get("/api/dashboard", auth, async (req, res) => {
   const user = await User.findById(req.user.id);
   const activity = await Activity.find({ userId: user._id })
@@ -160,13 +150,8 @@ app.get("/api/dashboard", auth, async (req, res) => {
     .limit(10);
 
   res.json({
-    user: {
-      name: user.name,
-      email: user.email
-    },
-    balances: {
-      usdt: user.usdtBalance
-    },
+    user: { name: user.name, email: user.email },
+    balance: user.usdtBalance,
     bonus: {
       unlocked: user.bonusUnlocked,
       used: user.bonusUsed
@@ -178,7 +163,7 @@ app.get("/api/dashboard", auth, async (req, res) => {
   });
 });
 
-/* -------- WITHDRAW -------- */
+/* WITHDRAW */
 app.post("/api/withdraw", auth, async (req, res) => {
   const { amount, network } = req.body;
   const user = await User.findById(req.user.id);
