@@ -1,72 +1,60 @@
 require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
+
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 const mongoose = require("mongoose");
-
-const app = express();
 const rateLimit = require("express-rate-limit");
 
-// ============================
-// CONFIG
-// ============================
+const app = express();
+
+/* ============================
+   CONFIG
+============================ */
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-
-// ✅ CHANGE THIS (VERY IMPORTANT)
-const ALLOWED_ORIGINS = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "https://lighthearted-sunshine-6fedb3.netlify.app",
-   "https://zopay-wallet.netlify.app"
+const ADMINS = [
+  "coindcx.ac@gmail.com",
+  "admin2@email.com"
 ];
 
-// ============================
-// CORS (FIXED FOR NETLIFY)
-// ============================
-// ============================
-// CORS (FIXED FOR NETLIFY)
-// ============================
 
-// ============================
-// CORS — FINAL PRODUCTION SAFE
-// ============================
+/* ============================
+   CORS
+============================ */
+const cors = require("cors");
 
-// ============================
-// CORS — SIMPLE & STABLE (RENDER + NETLIFY)
-// ============================
-const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://lighthearted-sunshine-6fedb3.netlify.app",
-    "https://zopay-wallet.netlify.app"
-  ],
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-};
+app.use(
+  cors({
+    origin: true,          // ⭐ KEY FIX (reflects request origin)
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+  })
+);
 
-app.use(cors(corsOptions));
+
+
+
 app.use(express.json());
 
-// ============================
-// GOOGLE CLIENT
-// ============================
+/* ============================
+   GOOGLE CLIENT
+============================ */
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// ============================
-// DATABASE
-// ============================
+/* ============================
+   DATABASE
+============================ */
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ Mongo error", err));
 
-// ============================
-// MODELS
-// ============================
+/* ============================
+   MODELS
+============================ */
 const User = mongoose.model(
   "User",
   new mongoose.Schema(
@@ -75,8 +63,11 @@ const User = mongoose.model(
       name: String,
       email: String,
       usdtBalance: { type: Number, default: 0 },
+
       bonusUnlocked: { type: Boolean, default: false },
-      bonusUsed: { type: Boolean, default: false }
+      bonusUsed: { type: Boolean, default: false },
+
+      withdrawUnlockAt: { type: Date }
     },
     { timestamps: true }
   )
@@ -97,57 +88,92 @@ const Activity = mongoose.model(
   )
 );
 
-// ============================
-// AUTH MIDDLEWARE
-// ============================
+const Deposit = mongoose.model(
+  "Deposit",
+  new mongoose.Schema(
+    {
+      userId: mongoose.Schema.Types.ObjectId,
+      amount: Number,
+      network: String,
+      status: { type: String, default: "pending" }
+    },
+    { timestamps: true }
+  )
+);
+
+const Withdrawal = mongoose.model(
+  "Withdrawal",
+  new mongoose.Schema(
+    {
+      userId: mongoose.Schema.Types.ObjectId,
+      amount: Number,
+      network: String,
+      address: String,
+      status: { type: String, default: "pending" }
+    },
+    { timestamps: true }
+  )
+);
+
+/* ============================
+   AUTH MIDDLEWARE
+============================ */
+
+
 function auth(req, res, next) {
+    function auth(req, res, next) {
+  // ✅ Allow preflight OPTIONS requests
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  // rest of your code
+}
+
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: "Unauthorized" });
 
-  const token = header.split(" ")[1];
-
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    req.user = jwt.verify(header.split(" ")[1], JWT_SECRET);
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
   }
 }
-// ============================
-// RATE LIMIT — GOOGLE AUTH
-// ============================
-const googleAuthLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // max 20 attempts per IP
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    error: "Too many login attempts. Please try again later."
+
+function adminOnly(req, res, next) {
+  if (!ADMINS.includes(req.user.email)) {
+    return res.status(403).json({ error: "Admin only" });
   }
+  next();
+}
+
+
+/* ============================
+   RATE LIMIT
+============================ */
+const googleAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20
 });
 
-// ============================
-// ROUTES
-// ============================
-app.get("/api/health", (_, res) => {
-  res.json({ status: "ok" });
-});
+/* ============================
+   ROUTES
+============================ */
+app.get("/api/health", (_, res) => res.json({ status: "ok" }));
 
-// ============================
-// GOOGLE LOGIN
-// ============================
+/* GOOGLE LOGIN */
 app.post("/api/auth/google", googleAuthLimiter, async (req, res) => {
-
   try {
-    const { credential } = req.body;
-
     const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
+      idToken: req.body.credential,
       audience: GOOGLE_CLIENT_ID
     });
 
     const payload = ticket.getPayload();
-
     let user = await User.findOne({ googleId: payload.sub });
 
     if (!user) {
@@ -164,22 +190,13 @@ app.post("/api/auth/google", googleAuthLimiter, async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    res.json({
-      token,
-      user: {
-        name: user.name,
-        email: user.email
-      }
-    });
-  } catch (err) {
-    console.error("❌ Google auth error", err);
+    res.json({ token, user: { name: user.name, email: user.email } });
+  } catch {
     res.status(401).json({ error: "Google auth failed" });
   }
 });
 
-// ============================
-// DASHBOARD
-// ============================
+/* DASHBOARD */
 app.get("/api/dashboard", auth, async (req, res) => {
   const user = await User.findById(req.user.id);
   const activity = await Activity.find({ userId: user._id })
@@ -188,51 +205,186 @@ app.get("/api/dashboard", auth, async (req, res) => {
 
   res.json({
     user: { name: user.name, email: user.email },
-    balance: user.usdtBalance,
+    balances: { usdt: user.usdtBalance },
     bonus: {
       unlocked: user.bonusUnlocked,
       used: user.bonusUsed
     },
-    activity,
-    campaign: {
-      count: await User.countDocuments({ bonusUnlocked: true })
-    }
+    withdrawUnlockAt: user.withdrawUnlockAt,
+    activity
   });
 });
 
-// ============================
-// WITHDRAW
-// ============================
+
+
+/* ADMIN — APPROVE DEPOSIT */
+app.post("/api/admin/deposit/:id/approve", auth, adminOnly, async (req, res) => {
+  const deposit = await Deposit.findById(req.params.id);
+  const user = await User.findById(deposit.userId);
+
+  deposit.status = "approved";
+  await deposit.save();
+
+  user.usdtBalance += deposit.amount;
+  user.bonusUnlocked = true;
+  user.withdrawUnlockAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  await user.save();
+
+  res.json({ success: true });
+});
+
+/* USER WITHDRAW REQUEST */
 app.post("/api/withdraw", auth, async (req, res) => {
-  const { amount, network, address } = req.body;
+  const user = await User.findById(req.user.id);
 
-if (!amount || amount <= 0) {
-  return res.status(400).json({ error: "Invalid amount" });
-}
+  if (user.withdrawUnlockAt && new Date() < user.withdrawUnlockAt) {
+    return res.status(403).json({ error: "Withdraw locked (2 hours)" });
+  }
 
-if (!["ERC20", "TRC20", "BEP20"].includes(network)) {
-  return res.status(400).json({ error: "Invalid network" });
-}
+  await Withdrawal.create({
+    userId: user._id,
+    amount: req.body.amount,
+    network: req.body.network,
+    address: req.body.address
+  });
 
-if (!address || address.length < 10) {
-  return res.status(400).json({ error: "Invalid address" });
-}
-
+  res.json({ success: true });
 });
 // ============================
-// GLOBAL ERROR HANDLER (PROD SAFE)
+// USER CONFIRM DEPOSIT
 // ============================
-app.use((err, req, res, next) => {
-  console.error("❌ Server error:", err.message);
+app.post("/api/deposit", auth, async (req, res) => {
+  const { amount, network } = req.body;
 
-  res.status(500).json({
-    error: "Something went wrong. Please try again later."
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "Invalid amount" });
+  }
+
+  await Deposit.create({
+    userId: req.user.id,
+    amount,
+    network
+  });
+
+  res.json({
+    success: true,
+    message: "Deposit submitted. Awaiting admin approval."
   });
 });
 
+
 // ============================
-// START SERVER
+// ADMIN — VIEW PENDING DEPOSITS
 // ============================
-app.listen(PORT, () => {
-  console.log(`🚀 ZOPAY backend running on port ${PORT}`);
+app.get("/api/admin/deposits", auth, adminOnly, async (req, res) => {
+  try {
+    const deposits = await Deposit.find({ status: "pending" })
+      .populate("userId", "email");
+
+    res.json(deposits);
+  } catch (err) {
+    console.error("❌ Admin deposit fetch error", err);
+    res.status(500).json({ error: "Failed to fetch deposits" });
+  }
+});
+
+// ============================
+// ADMIN — VIEW WITHDRAWALS
+// ============================
+app.get("/api/admin/withdrawals", auth, adminOnly, async (req, res) => {
+  const withdrawals = await Withdrawal.find()
+    .populate("userId", "email")
+    .sort({ createdAt: -1 });
+
+  res.json(withdrawals);
+});
+
+
+// ============================
+// ADMIN — APPROVE WITHDRAWAL
+// ============================
+app.post("/api/admin/withdrawals/:id/approve", auth, adminOnly, async (req, res) => {
+  const withdrawal = await Withdrawal.findById(req.params.id);
+  if (!withdrawal) return res.status(404).json({ error: "Not found" });
+
+  if (withdrawal.status !== "pending") {
+    return res.status(400).json({ error: "Already processed" });
+  }
+
+  withdrawal.status = "approved";
+  await withdrawal.save();
+
+  await Activity.create({
+    userId: withdrawal.userId,
+    type: "Withdraw",
+    token: "USDT",
+    amount: withdrawal.amount,
+    network: withdrawal.network,
+    status: "Completed"
+  });
+
+  res.json({ success: true });
+});
+
+
+
+// ============================
+// ADMIN — APPROVE DEPOSIT
+// ============================
+app.post("/api/admin/deposits/:id/approve", auth, adminOnly, async (req, res) => {
+  const deposit = await Deposit.findById(req.params.id);
+  if (!deposit) return res.status(404).json({ error: "Deposit not found" });
+
+  if (deposit.status !== "pending") {
+    return res.status(400).json({ error: "Already processed" });
+  }
+
+  deposit.status = "approved";
+  await deposit.save();
+
+  const user = await User.findById(deposit.userId);
+
+  // 💰 CREDIT BALANCE (100 + 100 bonus)
+  user.usdtBalance += 200;
+  user.bonusUnlocked = true;
+
+  // ⏳ LOCK WITHDRAW FOR 2 HOURS
+  user.withdrawUnlockAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+
+  await user.save();
+
+  await Activity.create({
+    userId: user._id,
+    type: "Deposit",
+    token: "USDT",
+    amount: deposit.amount,
+    network: deposit.network,
+    status: "Completed"
+  });
+
+  res.json({ success: true });
+});
+
+
+// ADMIN — REJECT
+app.post("/api/admin/deposit/:id/reject", auth, adminOnly, async (req, res) => {
+  await Deposit.findByIdAndUpdate(req.params.id, { status: "rejected" });
+  res.json({ success: true });
+});
+
+/* ============================
+   START
+============================ */
+app.listen(PORT, () =>
+  console.log(`🚀 ZOPAY backend running on ${PORT}`)
+);
+// ============================
+// ADMIN — ANALYTICS
+// ============================
+app.get("/api/admin/analytics", auth, adminOnly, async (req, res) => {
+  res.json({
+    users: await User.countDocuments(),
+    deposits: await Deposit.countDocuments({ status: "approved" }),
+    withdrawals: await Withdrawal.countDocuments({ status: "approved" })
+  });
 });
